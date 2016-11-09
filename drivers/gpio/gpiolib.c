@@ -791,7 +791,7 @@ static struct class_attribute gpio_class_attrs[] = {
 	__ATTR(export, 0200, NULL, export_store),
 	__ATTR(unexport, 0200, NULL, unexport_store),
 /*FIHTDC Add GPIO control function  */
-	__ATTR(control, 0666, NULL, control_store),	
+	__ATTR(control, 0222, NULL, control_store),
 	__ATTR_NULL,
 };
 
