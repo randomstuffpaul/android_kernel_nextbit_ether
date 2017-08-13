@@ -129,7 +129,7 @@
 
 #define IPA_HW_TABLE_ALIGNMENT(start_ofst) \
 	(((start_ofst) + 127) & ~127)
-#define IPA_RT_FLT_HW_RULE_BUF_SIZE	(128)
+#define IPA_RT_FLT_HW_RULE_BUF_SIZE	(256)
 
 #define IPA_HDR_PROC_CTX_TABLE_ALIGNMENT_BYTE 8
 #define IPA_HDR_PROC_CTX_TABLE_ALIGNMENT(start_ofst) \
@@ -993,7 +993,7 @@ union IpaHwMhiDlUlSyncCmdData_t {
  */
 struct ipa_uc_ctx {
 	bool uc_inited;
-	bool uc_loaded;
+	atomic_t uc_loaded;
 	bool uc_failed;
 	struct mutex uc_lock;
 	struct completion uc_completion;
@@ -1017,6 +1017,8 @@ struct ipa_uc_wdi_ctx {
 	struct dma_pool *wdi_dma_pool;
 	u32 wdi_uc_stats_ofst;
 	struct IpaHwStatsWDIInfoData_t *wdi_uc_stats_mmio;
+	void *priv;
+	ipa_uc_ready_cb uc_ready_cb;
 };
 
 /**
@@ -1514,6 +1516,7 @@ int ipa_tag_process(struct ipa_desc *desc, int num_descs,
 		    unsigned long timeout);
 
 int ipa_q6_cleanup(void);
+int ipa_q6_pipe_reset(void);
 int ipa_init_q6_smem(void);
 
 int ipa_sps_connect_safe(struct sps_pipe *h, struct sps_connect *connect,
