@@ -35,7 +35,7 @@ enum lp55xx_engine_mode {
 #define LP55XX_DEV_ATTR_RO(name, show)		\
 	DEVICE_ATTR(name, S_IRUGO, show, NULL)
 #define LP55XX_DEV_ATTR_WO(name, store)		\
-	DEVICE_ATTR(name, S_IWUGO, NULL, store)
+	DEVICE_ATTR(name, S_IWUSR | S_IWGRP, NULL, store)
 /*>>EricHsieh,[NBQ-150],END*/
 
 #define show_mode(nr)							\

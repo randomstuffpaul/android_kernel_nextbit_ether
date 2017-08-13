@@ -54,7 +54,8 @@
 			39 01 00 00 00 00 03 44 03 c0
 			15 01 00 00 00 00 02 51 FF
 			15 01 00 00 05 00 02 55 02
-			15 01 00 00 00 00 02 53 24];
+			15 01 00 00 00 00 02 53 24
+		];
 		qcom,mdss-dsi-off-command = [05 01 00 00 02 00 02 28 00
 				 05 01 00 00 a0 00 02 10 00];
 		qcom,mdss-dsi-on-command-state = "dsi_lp_mode";
@@ -88,7 +89,9 @@
 		qcom,mdss-dsi-reset-sequence = <1 10>, <0 1>, <1 20>;
 		qcom,mdss-pan-physical-width-dimension = <65>;
 		qcom,mdss-pan-physical-height-dimension = <115>;
-		qcom,mdss-dsi-min-refresh-rate = <53>;
+		qcom,mdss-dsi-pan-enable-dynamic-fps;
+		qcom,mdss-dsi-pan-fps-update = "dfps_immediate_lcm_clk_update_mode";
+		qcom,mdss-dsi-min-refresh-rate = <24>;
 		qcom,mdss-dsi-max-refresh-rate = <60>;
 		qcom,mdss-dsi-panel-status-check-mode = "te_signal_check";
 		qcom,mdss-dsi-tx-eot-append;
@@ -119,10 +122,62 @@
 			15 01 00 00 00 00 02 53 24
 		];
 
+		qcom,nbq-low-power-fps-command = [
+			29 01 00 00 00 00 02 00 00
+			29 01 00 00 00 00 04 FF 19 06 01
+			29 01 00 00 00 00 02 00 80
+			29 01 00 00 00 00 03 FF 19 06
+			39 01 00 00 00 00 02 00 80
+			39 01 00 00 00 00 02 C1 55
+			39 01 00 00 00 00 02 00 81
+			39 01 00 00 00 00 02 C1 55
+			39 01 00 00 00 00 02 00 91
+			39 01 00 00 00 00 02 C1 54
+			29 01 00 00 00 00 02 00 00
+			29 01 00 00 00 00 02 FB 01
+			39 01 00 00 00 00 03 44 05 a0
+		];
+
+		qcom,nbq-mid-power-fps-command = [
+			29 01 00 00 00 00 02 00 00
+			29 01 00 00 00 00 04 FF 19 06 01
+			29 01 00 00 00 00 02 00 80
+			29 01 00 00 00 00 03 FF 19 06
+			39 01 00 00 00 00 02 00 80
+			39 01 00 00 00 00 02 C1 22
+			39 01 00 00 00 00 02 00 81
+			39 01 00 00 00 00 02 C1 22
+			39 01 00 00 00 00 02 00 91
+			39 01 00 00 00 00 02 C1 00
+			29 01 00 00 00 00 02 00 00
+			29 01 00 00 00 00 02 FB 01
+			39 01 00 00 00 00 03 44 03 c0
+		];
+
+		qcom,nbq-default-power-fps-command = [
+			29 01 00 00 00 00 02 00 00
+			29 01 00 00 00 00 04 FF 19 06 01
+			29 01 00 00 00 00 02 00 80
+			29 01 00 00 00 00 03 FF 19 06
+			39 01 00 00 00 00 02 00 80
+			39 01 00 00 00 00 02 C1 55
+			39 01 00 00 00 00 02 00 81
+			39 01 00 00 00 00 02 C1 55
+			39 01 00 00 00 00 02 00 91
+			39 01 00 00 00 00 02 C1 00
+			29 01 00 00 00 00 02 00 00
+			29 01 00 00 00 00 02 FB 01
+			39 01 00 00 00 00 03 44 03 c0
+		];
+
 		qcom,mdss-dsi-cabc-off-command-state = "dsi_lp_mode";
 		qcom,mdss-dsi-cabc-ui-command-state = "dsi_lp_mode";
 		qcom,mdss-dsi-cabc-still-command-state = "dsi_lp_mode";
 		qcom,mdss-dsi-cabc-moving-command-state = "dsi_lp_mode";
+
+		qcom,nbq-low-power-fps-command-state = "dsi_lp_mode";
+		qcom,nbq-mid-power-fps-command-state = "dsi_lp_mode";
+		qcom,nbq-default-power-fps-command-state = "dsi_lp_mode";
 
 		qcom,mdss-dsi-ce-on-command = [
 			29 01 00 00 00 00 02 00 00

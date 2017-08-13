@@ -4295,7 +4295,6 @@ static int smbchg_battery_get_property(struct power_supply *psy,
 {
 	struct smbchg_chip *chip = container_of(psy,
 				struct smbchg_chip, batt_psy);
-	int temp_capacity = 0;
 #ifdef CONFIG_FIH_BATTERY
 	enum power_supply_type usb_supply_type;
 	char *usb_type_name = "null";
@@ -4357,7 +4356,7 @@ static int smbchg_battery_get_property(struct power_supply *psy,
 		val->intval = fih_battery_capacity(get_prop_batt_capacity(chip));
 		if((get_prop_batt_capacity(chip) >= 80) && (get_prop_batt_capacity(chip) < 100))
 		{
-			temp_capacity = 800 + 200*(get_prop_batt_capacity(chip)*10 - 800)/190;
+			int temp_capacity = 800 + 200*(get_prop_batt_capacity(chip)*10 - 800)/190;
 			temp_capacity += 5;//round function
 			temp_capacity /= 10;
 			if(temp_capacity > 100)

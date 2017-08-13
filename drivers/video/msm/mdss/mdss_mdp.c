@@ -920,7 +920,7 @@ EXPORT_SYMBOL(mdss_bus_bandwidth_ctrl);
 void mdss_mdp_clk_ctrl(int enable)
 {
 	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
-	static int mdp_clk_cnt;
+	static int mdp_clk_cnt = 0;
 	int changed = 0;
 
 	mutex_lock(&mdp_clk_lock);

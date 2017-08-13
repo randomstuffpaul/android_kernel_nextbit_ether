@@ -24,6 +24,7 @@
  *
  *
  * Copyright (c) 2015 Fingerprint Cards AB <tech@fingerprints.com>
+ * Copyright (c) 2016 Paranoid Android for Nextbit Systems Inc.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License Version 2
@@ -32,11 +33,17 @@
 
 #include <linux/clk.h>
 #include <linux/delay.h>
+// xboxfanj@PA add to register the FB notifier - start
+#include <linux/fb.h>
+// xboxfanj@PA add to register the FB notifier - end
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+// xboxfanj@PA add to register the FB notifier - start
+#include <linux/notifier.h>
+// xboxfanj@PA add to register the FB notifier - end
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/regulator/consumer.h>
@@ -87,6 +94,12 @@ struct fpc1020_data {
 	struct clk *iface_clk;
 	struct clk *core_clk;
 	struct regulator *vreg[ARRAY_SIZE(vreg_conf)];
+	// xboxfanj@PA add to register the FB notifier - start
+	struct notifier_block fb_notif;
+	// xboxfanj@PA add to register the FB notifier - end
+	// TheCrazyLex@PA add to secure IRQ toggling operations - start
+	spinlock_t irq_activity_lock;
+	// TheCrazyLex@PA add to secure IRQ toggling operations - end
 
     struct wake_lock ttw_wl;
 	int irq_gpio;
@@ -101,6 +114,11 @@ struct fpc1020_data {
 };
 
 struct fpc1020_data *g_fpc1020_data = NULL;
+
+// TheCrazyLex@PA register global booleans to track IRQ activity state and screen state - start
+bool fpc_irq_active;
+bool screen_on;
+// TheCrazyLex@PA register global booleans to track IRQ activity state and screen state - end
 
 static int vreg_setup(struct fpc1020_data *fpc1020, const char *name,
 	bool enable)
@@ -239,6 +257,14 @@ static int set_pipe_ownership(struct fpc1020_data *fpc1020, bool to_tz)
 static int set_clks(struct fpc1020_data *fpc1020, bool enable)
 {
 	int rc = 0;
+
+	// TheCrazyLex@PA add additional logging for the resume/suspend state - start
+	if (enable)
+		pr_debug("fpc1020: set_clks: resuming in progress!\n");
+	else
+		pr_debug("fpc1020: set_clks: suspending in progress!\n");
+	// TheCrazyLex@PA add additional logging for the resume/suspend state - end
+
 	mutex_lock(&fpc1020->lock);
 
 	if (enable == fpc1020->clocks_enabled)
@@ -306,6 +332,25 @@ int fpc_clk_set(bool enable)
 	return -ENOMEM;
 }
 EXPORT_SYMBOL(fpc_clk_set);
+
+static int fpc1020_resume(struct device *dev)
+{
+	struct fpc1020_data *fpc1020 = dev_get_drvdata(dev);
+
+	if (fpc1020->clocks_suspended)
+		set_clks(fpc1020, true);
+
+	return 0;
+}
+
+static int fpc1020_suspend(struct device *dev)
+{
+	struct fpc1020_data *fpc1020 = dev_get_drvdata(dev);
+
+	fpc1020->clocks_suspended = fpc1020->clocks_enabled;
+	set_clks(fpc1020, false);
+	return 0;
+}
 
 static ssize_t clk_enable_set(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
@@ -646,6 +691,100 @@ static const struct attribute_group attribute_group = {
 	.attrs = attributes,
 };
 
+// TheCrazyLex@PA provide methods for toggling IRQ state, synced and not synced with screen state - start
+/**
+ * Method for handling changes in the FPC IRQ activity
+ */
+static int irq_active_toggle_safe(bool request_active, struct device *dev)
+{
+
+	int rc = 0;
+	struct fpc1020_data *fpc1020 = dev_get_drvdata(dev);
+
+	spin_lock(&fpc1020->irq_activity_lock);
+
+	if (request_active && !fpc_irq_active) {
+		enable_irq(gpio_to_irq(fpc1020->irq_gpio));
+		fpc_irq_active = true;
+		pr_info("fpc1020: irq_active_toggle_safe: IRQ enabled. \n");
+	}
+
+	else if (!request_active && fpc_irq_active) {
+		disable_irq(gpio_to_irq(fpc1020->irq_gpio));
+		fpc_irq_active = false;
+		pr_info("fpc1020: irq_active_toggle_safe: IRQ disabled. \n");
+	}
+
+	else {
+		pr_warn("fpc1020: irq_active_toggle_safe: Invalid IRQ toggle request received. \n");
+		rc = 1;
+	}
+
+	spin_unlock(&fpc1020->irq_activity_lock);
+
+	return rc;
+}
+
+/**
+ * Wrapper for irq_active_toggle_safe which
+ * ensures we don't disable the IRQ when screen is on.
+ * This function is the one getting exported, since we
+ * don't want to allow unsynced requests which are non-internal.
+ */
+int irq_active_toggle_safe_synced(bool request_active)
+{
+
+	if(g_fpc1020_data == NULL) {
+		return 1;
+	}
+
+	/* Skipping any action if wakeup is enabled */
+	if (g_fpc1020_data->wakeup_enabled)
+		return 0;
+
+	if (!request_active && screen_on) {
+		pr_warn("fpc1020: irq_active_toggle_safe_synced: Unsynced IRQ toggle request received. Ignoring... \n");
+		return 0;
+	}
+	else return irq_active_toggle_safe(request_active, g_fpc1020_data->dev);
+}
+EXPORT_SYMBOL(irq_active_toggle_safe_synced);
+// TheCrazyLex@PA provide methods for toggling IRQ state, synced and not synced with screen state - end
+
+// TheCrazyLex@PA add FB notifier callback to toggle the IRQ activity state based on the screen state - start
+static int fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
+{
+	struct fpc1020_data *fpc1020 = container_of(self, struct fpc1020_data, fb_notif);
+	struct fb_event *evdata = data;
+	int *blank;
+
+	if ((event == FB_EVENT_BLANK) && evdata && evdata->data) {
+
+		blank = evdata->data;
+
+		switch (*blank) {
+		case FB_BLANK_POWERDOWN:
+			screen_on = false;
+			pr_info("fpc1020: suspending++\n");
+			(void) irq_active_toggle_safe(false, fpc1020->dev);
+			pr_info("fpc1020: suspended --\n");
+		break;
+		case FB_BLANK_UNBLANK:
+			screen_on = true;
+			pr_info("fpc1020: resuming++\n");
+			(void) irq_active_toggle_safe(true, fpc1020->dev);
+			// TheCrazyLex@PA move handling of resuming clocks into the FB notifier - start
+			fpc1020_resume(fpc1020->dev);
+			// TheCrazyLex@PA move handling of resuming clocks into the FB notifier - end
+			pr_info("fpc1020: resumed --\n");
+		break;
+		}
+	}
+
+	return 0;
+}
+// TheCrazyLex@PA add FB notifier callback to toggle the IRQ activity state based on the screen state - end
+
 static irqreturn_t fpc1020_irq_handler(int irq, void *handle)
 {
 	struct fpc1020_data *fpc1020 = handle;
@@ -817,6 +956,15 @@ static int fpc1020_probe(struct spi_device *spi)
 		device_init_wakeup(dev, 1);
 	}
 	mutex_init(&fpc1020->lock);
+
+	// TheCrazyLex@PA register global booleans to track IRQ activity state and screen state - start
+	fpc_irq_active = true;
+	screen_on = true;
+	// TheCrazyLex@PA register global booleans to track IRQ activity state and screen state - end
+
+	// TheCrazyLex@PA add to secure IRQ toggling operations - start
+	spin_lock_init(&fpc1020->irq_activity_lock);
+	// TheCrazyLex@PA add to secure IRQ toggling operations - end
 	rc = devm_request_threaded_irq(dev, gpio_to_irq(fpc1020->irq_gpio),
 			NULL, fpc1020_irq_handler, irqf,
 			dev_name(dev), fpc1020);
@@ -845,6 +993,15 @@ static int fpc1020_probe(struct spi_device *spi)
 		goto exit;
 	}
 
+	// xboxfanj@PA add to register the FB notifier - start
+	fpc1020->fb_notif.notifier_call = fb_notifier_callback;
+	rc = fb_register_client(&fpc1020->fb_notif);
+	if (rc) {
+		dev_err(fpc1020->dev, "Unable to register fb_notifier: %d\n", rc);
+		goto exit;
+	}
+	// xboxfanj@PA add to register the FB notifier - end
+
 	if (of_property_read_bool(dev->of_node, "fpc,enable-on-boot")) {
 		dev_info(dev, "Enabling hardware\n");
 		(void)device_prepare(fpc1020, true);
@@ -860,6 +1017,9 @@ static int fpc1020_remove(struct spi_device *spi)
 {
 	struct  fpc1020_data *fpc1020 = dev_get_drvdata(&spi->dev);
 
+	// TheCrazyLex@PA unregister FB notifier - start
+	fb_unregister_client(&fpc1020->fb_notif);
+	// TheCrazyLex@PA unregister FB notifier - end
 	sysfs_remove_group(&spi->dev.kobj, &attribute_group);
 	mutex_destroy(&fpc1020->lock);
 	wake_lock_destroy(&fpc1020->ttw_wl);
@@ -870,28 +1030,12 @@ static int fpc1020_remove(struct spi_device *spi)
 	return 0;
 }
 
-static int fpc1020_suspend(struct device *dev)
-{
-	struct fpc1020_data *fpc1020 = dev_get_drvdata(dev);
-
-	fpc1020->clocks_suspended = fpc1020->clocks_enabled;
-	set_clks(fpc1020, false);
-	return 0;
-}
-
-static int fpc1020_resume(struct device *dev)
-{
-	struct fpc1020_data *fpc1020 = dev_get_drvdata(dev);
-
-	if (fpc1020->clocks_suspended)
-		set_clks(fpc1020, true);
-
-	return 0;
-}
-
 static const struct dev_pm_ops fpc1020_pm_ops = {
 	.suspend = fpc1020_suspend,
-	.resume = fpc1020_resume,
+	//.resume = fpc1020_resume,
+	// TheCrazyLex@PA move handling of resuming clocks into the FB notifier - start
+	.resume = NULL,
+	// TheCrazyLex@PA move handling of resuming clocks into the FB notifier - end
 };
 
 static struct of_device_id fpc1020_of_match[] = {
