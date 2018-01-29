@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2015, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2015, 2017 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -510,6 +510,12 @@ static int32_t msm_actuator_piezo_move_focus(
 	if (num_steps <= 0 || num_steps > MAX_NUMBER_OF_STEPS) {
 		pr_err("num_steps out of range = %d\n",
 			num_steps);
+		return -EFAULT;
+	}
+
+	if (dest_step_position > a_ctrl->total_steps) {
+		pr_err("Step pos greater than total steps = %d\n",
+			dest_step_position);
 		return -EFAULT;
 	}
 
@@ -1433,7 +1439,7 @@ static long msm_actuator_subdev_ioctl(struct v4l2_subdev *sd,
 	struct msm_actuator_ctrl_t *a_ctrl = v4l2_get_subdevdata(sd);
 	void __user *argp = (void __user *)arg;
 	CDBG("Enter\n");
-	CDBG("%s:%d a_ctrl %p argp %p\n", __func__, __LINE__, a_ctrl, argp);
+	CDBG("%s:%d a_ctrl %pK argp %pK\n", __func__, __LINE__, a_ctrl, argp);
 	switch (cmd) {
 	case VIDIOC_MSM_SENSOR_GET_SUBDEV_ID:
 		return msm_actuator_get_subdev_id(a_ctrl, argp);
@@ -1658,7 +1664,7 @@ static int32_t msm_actuator_i2c_probe(struct i2c_client *client,
 		goto probe_failure;
 	}
 
-	CDBG("client = 0x%p\n",  client);
+	CDBG("client = 0x%pK\n",  client);
 
 	rc = of_property_read_u32(client->dev.of_node, "cell-index",
 		&act_ctrl_t->subdev_id);
