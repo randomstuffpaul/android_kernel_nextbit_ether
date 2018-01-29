@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -175,6 +175,12 @@ struct subsys_device {
 	int notif_state;
 	struct list_head list;
 };
+
+/* NBQ-788 - Porting FIH SSR ramdump mechanism */
+#define MAX_SSR_REASON_LEN 81U
+extern char fih_failure_reason[MAX_SSR_REASON_LEN];
+bool disable_MDM_RamDump = false;
+/* end NBQ-788 */
 
 static struct subsys_device *to_subsys(struct device *d)
 {
@@ -453,6 +459,11 @@ static int is_ramdump_enabled(struct subsys_device *dev)
 {
 	if (dev->desc->ramdump_disable_gpio)
 		return !dev->desc->ramdump_disable;
+
+	/* NBQ-788- - Porting FIH SSR ramdump mechanism */
+	if (disable_MDM_RamDump == true)
+		return 0;
+	/* end NBQ-788 */
 
 	return enable_ramdumps;
 }
@@ -858,6 +869,21 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 
 	pr_debug("[%s:%d]: Starting restart sequence for %s\n",
 			current->comm, current->pid, desc->name);
+
+	/* NBQ-788 - Porting FIH SSR ramdump mechanism */
+	if ( (strcmp(desc->name, "modem") == 0) && enable_ramdumps ) {
+		if ((strstr(fih_failure_reason, "diagoem.c") != NULL) || (strstr(fih_failure_reason, "fih_qmi_svc.c") != NULL) ||
+		    (strstr(fih_failure_reason, "fih_nv.c") != NULL)) {
+			disable_MDM_RamDump = true;
+
+			pr_info("[%p]: disable_MDM_RamDump = %s, fih_failure_reason = %s.\n",
+			current, (disable_MDM_RamDump?"TRUE":"FALSE"), fih_failure_reason);
+		}
+	}
+	else
+		disable_MDM_RamDump = false;
+	/* end NBQ-788 */
+
 	notify_each_subsys_device(list, count, SUBSYS_BEFORE_SHUTDOWN, NULL);
 	for_each_subsys_device(list, count, NULL, subsystem_shutdown);
 	notify_each_subsys_device(list, count, SUBSYS_AFTER_SHUTDOWN, NULL);
@@ -880,6 +906,13 @@ static void subsystem_restart_wq_func(struct work_struct *work)
 
 	pr_info("[%s:%d]: Restart sequence for %s completed.\n",
 			current->comm, current->pid, desc->name);
+
+	/* NBQ-788 - Porting FIH SSR ramdump mechanism */
+	if ( strcmp(desc->name, "modem") == 0 ) {
+		disable_MDM_RamDump = false;
+		pr_debug("[%p]: disable_MDM_RamDump = %s.\n", current, (disable_MDM_RamDump?"TRUE":"FALSE"));
+	}
+	/* end NBQ-788 */
 
 	mutex_unlock(&soc_order_reg_lock);
 	mutex_unlock(&track->lock);
@@ -959,8 +992,9 @@ int subsystem_restart_dev(struct subsys_device *dev)
 	pr_info("Restart sequence requested for %s, restart_level = %s.\n",
 		name, restart_levels[dev->restart_level]);
 
-	if (WARN(disable_restart_work == DISABLE_SSR,
-		"subsys-restart: Ignoring restart request for %s.\n", name)) {
+	if (disable_restart_work == DISABLE_SSR) {
+		pr_warn("subsys-restart: Ignoring restart request for %s.\n",
+									name);
 		return 0;
 	}
 
